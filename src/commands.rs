@@ -24,6 +24,11 @@ pub enum Command {
         /// Task ID
         id: u32,
     },
+    /// Remove all the tasks assign to a tag
+    Rmtag {
+        /// Tag
+        tag: String
+    },
     /// Assign a tag to a task
     Tag {
         /// Task ID
@@ -33,12 +38,15 @@ pub enum Command {
         tag: String
     },
     /// Select the tag to work with, filtering the task list and tagging new tasks by default
-    Select {
+    Use {
         /// Tag
-        tag: String
-    },
+        tag: Option<String>
+   },
     /// Order completed tasks to be first in the list
     Order,
     /// List all tasks
-    Ls,
+    Ls {
+        /// Tag
+        tag: Option<String>
+    }
 }

@@ -9,8 +9,6 @@ use std::error::Error;
 
 use crate::task::TaskManager;
 
-pub const TODO_PATH: &str = ".todo_list";
-
 fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {e}");
@@ -26,10 +24,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         Command::Done { id } => tasks.mark_done(id),
         Command::Undone { id } => tasks.mark_undone(id),
         Command::Rm { id } => tasks.remove(id),
+        Command::Rmtag { tag } => tasks.remove_tag(tag),
         Command::Tag { id, tag } => tasks.tag(id, tag),
-        Command::Select { tag } => tasks.select(tag),
+        Command::Use { tag } => tasks.use_tag(tag),
         Command::Order => tasks.order_completed(),
-        Command::Ls => (),
+        // TODO: Hacer ls para los tags
+        Command::Ls { .. } => (),
     };
     tasks.list();
     tasks.save_all()?;

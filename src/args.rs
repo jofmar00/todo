@@ -2,7 +2,7 @@ use clap::Parser;
 
 use crate::commands::Command;
 
-/// A simple command-line to-do list manager.
+/// A simple command-line to-do list manager. Made by @jofmar00 in Rust.
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Args {
