@@ -1,4 +1,13 @@
-use clap::Subcommand;
+use clap::{Parser, Subcommand};
+
+/// A simple command-line to-do list manager. Made by @jofmar00 in Rust.
+#[derive(Parser)]
+#[command(version)]
+pub struct Args {
+    /// Subcommand to run.
+    #[command(subcommand)]
+    pub cmd: Command,
+}
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -8,6 +17,11 @@ pub enum Command {
         description: String,
         /// Tag to assign to the task (defaults to the selected tag, if any)
         tag: Option<String>,
+    },
+    /// List all tasks
+    Ls {
+        /// Tag
+        tags: Vec<String>
     },
     /// Mark a task as done
     Done {
@@ -27,12 +41,9 @@ pub enum Command {
         #[arg(required = true, num_args = 1..)]
         ids: Vec<u32>,
     },
-    /// Remove all the tasks assign to a tag
-    Rmtag {
-        /// Tag
-        #[arg(required = true, num_args = 1..)]
-        tags: Vec<String>,
-    },
+    /// Order completed tasks to be first in the list
+    Order,
+
     /// Assign a tag to a task
     Tag {
         /// Task ID
@@ -41,18 +52,22 @@ pub enum Command {
         /// Tag
         tag: String
     },
+    /// List all tags
+    Lstags,
     /// Use a specific tag in listing and creation of new tags
     Use {
         /// Tag
         tag: Option<String>
    },
-    /// Order completed tasks to be first in the list
-    Order,
-    /// List all tags
-    Lstags,
-    /// List all tasks
-    Ls {
+    /// Rename tag
+    Rename {
+        original: String,
+        new: String,
+    },
+    /// Remove all the tasks assign to a tag
+    Rmtag {
         /// Tag
-        tags: Vec<String>
+        #[arg(required = true, num_args = 1..)]
+        tags: Vec<String>,
     },
 }
