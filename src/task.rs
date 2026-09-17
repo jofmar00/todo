@@ -1,5 +1,5 @@
 use std::{
-    env, error::Error, fmt::Display, fs::OpenOptions, io::{ErrorKind, Write}, path::{Path, PathBuf},
+    collections::{BTreeSet, HashSet}, env, error::Error, fmt::Display, fs::OpenOptions, io::{ErrorKind, Write}, path::{Path, PathBuf},
 };
 
 use colored::Colorize;
@@ -39,7 +39,7 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
     )
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Tag(String);
 impl Display for Tag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -93,11 +93,11 @@ impl Display for Task {
 }
 
 impl Task {
-    fn new(id: u32, description: String, tag: Option<String>) -> Self {
+    fn new(id: u32, description: String, tag: Option<Tag>) -> Self {
         Self {
             id,
             description,
-            tag: tag.map(Tag),
+            tag,
             completed: false,
         }
     }
@@ -110,6 +110,22 @@ pub struct TaskManager {
 }
 
 impl TaskManager {
+    // ---------------------------
+    // Private functions
+    // ---------------------------
+    fn next_id(&self) -> u32 {
+        self.tasks.len() as u32 + 1
+    }
+
+    fn recalculate_task_ids(&mut self) {
+        for (i, task) in self.tasks.iter_mut().enumerate() {
+            task.id = i as u32 + 1;
+        }
+    }
+
+    // ---------------------------
+    // Public functions
+    // ---------------------------
     pub fn build() -> Result<Self, Box<dyn Error>> {
         let path = todo_path()?;
         let mut tasks = Vec::new();
@@ -138,58 +154,6 @@ impl TaskManager {
         Ok(Self { tasks, selected_tag, path })
     }
 
-    fn next_id(&self) -> u32 {
-        self.tasks.len() as u32 + 1
-    }
-
-    fn recalculate_task_ids(&mut self) {
-        for (i, task) in self.tasks.iter_mut().enumerate() {
-            task.id = i as u32 + 1;
-        }
-    }
-
-    pub fn add(&mut self, description: String, tag: Option<String>) {
-        let tag = tag.or_else(|| self.selected_tag.as_ref().map(|t| t.as_str().to_string()));
-        let task = Task::new(self.next_id(), description, tag);
-        self.tasks.push(task);
-    }
-
-    pub fn list(&self) {
-        let id_width = self.tasks.len().max(1).to_string().len();
-        self.tasks.iter()
-            .filter(|t| self.selected_tag.is_none() || t.tag == self.selected_tag )
-            .for_each(|t| println!("{t:id_width$}"));
-    }
-
-    pub fn use_tag(&mut self, tag: Option<String>) {
-        self.selected_tag = tag.filter(|t| t != DEFAULT_TAG).map(Tag);
-        match &self.selected_tag {
-            Some(tag) => println!("Using tag {tag} \n"),
-            None => println!("Using tag {DEFAULT_TAG} \n"),
-        }
-    }
-
-    pub fn mark_done(&mut self, id: u32) {
-        match self.tasks.iter_mut().find(|t| t.id == id) {
-            Some(task) => task.completed = true,
-            None => println!("{}", format!("Task {id} not found").bright_red().bold()),
-        }
-    }
-
-    pub fn mark_undone(&mut self, id: u32) {
-        match self.tasks.iter_mut().find(|t| t.id == id) {
-            Some(task) => task.completed = false,
-            None => println!("{}", format!("Task {id} not found").bright_red().bold()),
-        }
-    }
-
-    pub fn tag(&mut self, id: u32, tag: String) {
-        match self.tasks.iter_mut().find(|t| t.id == id) {
-            Some(task) => task.tag = Some(Tag(tag)),
-            None => println!("{}", format!("Task {id} not found").bright_red().bold()),
-        }
-    }
-
     pub fn save_all(&self) -> Result<(), Box<dyn Error>> {
         let mut file = OpenOptions::new()
             .write(true)
@@ -209,22 +173,94 @@ impl TaskManager {
         Ok(())
     }
 
-    pub fn remove(&mut self, id: u32) {
-        match self.tasks.iter().find(|t| t.id == id) {
-            Some(delete_task) => {
-                println!("{}", format!("Deleted task {id}: {} \n", delete_task.description).cyan().bold());
-                self.tasks.retain(|t| t.id != id);
-                self.recalculate_task_ids();
+
+    pub fn add(&mut self, description: String, tag: Option<String>) {
+        let tag = tag.map(Tag).or_else(|| self.selected_tag.clone());
+        let task = Task::new(self.next_id(), description, tag);
+        self.tasks.push(task);
+    }
+
+    pub fn list(&self, tags: Vec<String>) {
+        let id_width = self.tasks.len().max(1).to_string().len();
+        let wanted_tags: HashSet<Tag> = tags.into_iter().map(Tag).collect();
+
+        if let Some(selected_tag) = &self.selected_tag {
+            println!("Using tag {selected_tag}");
+        }
+        
+        self.tasks.iter()
+            .filter(|task| if wanted_tags.is_empty() {
+                self.selected_tag.is_none() || task.tag == self.selected_tag
+            } else {
+                task.tag.as_ref().is_some_and(|tag| wanted_tags.contains(tag))
+            })
+            .for_each(|task| println!("{task:id_width$}"));
+    }
+
+    pub fn list_tags(&self) {
+        println!("#{DEFAULT_TAG}");
+        self.tasks.iter()
+            .filter_map(|t| t.tag.as_ref())
+            // Pasamos a BTreeSet para evitar duplicados
+            .collect::<BTreeSet<&Tag>>()
+            .into_iter()
+            .for_each(|tag| { 
+                let current = if Some(tag) == self.selected_tag.as_ref() { " (Current)" } else { "" };
+                println!("{tag}{current}");
+            });
+    }
+
+    pub fn use_tag(&mut self, tag: Option<String>) {
+        self.selected_tag = tag.filter(|t| t != DEFAULT_TAG).map(Tag);
+        if self.selected_tag.is_none() { println!("Using tag {DEFAULT_TAG}")};
+    }
+
+    pub fn mark_done(&mut self, ids: Vec<u32>) {
+        for id in ids {
+            match self.tasks.iter_mut().find(|t| t.id == id) {
+                Some(task) => task.completed = true,
+                None => println!("{}", format!("Task {id} not found").bright_red().bold()),
             }
-            None => println!("{}", format!("Task {id} not found\n").red().bold()),
         }
     }
 
-    pub fn remove_tag(&mut self, tag: String) {
-        let tag = Tag(tag);
-        println!("{}", format!("Deleting all occurrences of tasks with tag: {tag} \n").bold());
-        self.tasks.retain(|t| t.tag.as_ref().map(Tag::as_str) != Some(tag.as_str()));
-        self.recalculate_task_ids();
+    pub fn mark_undone(&mut self, ids: Vec<u32>) {
+        for id in ids {
+            match self.tasks.iter_mut().find(|t| t.id == id) {
+                Some(task) => task.completed = false,
+                None => println!("{}", format!("Task {id} not found").bright_red().bold()),
+            }
+        }
+    }
+
+    pub fn tag(&mut self, id: u32, tag: String) {
+        match self.tasks.iter_mut().find(|t| t.id == id) {
+            Some(task) => task.tag = Some(Tag(tag)),
+            None => println!("{}", format!("Task {id} not found").bright_red().bold()),
+        }
+    }
+
+
+    pub fn remove(&mut self, ids: Vec<u32>) {
+        for id in ids{
+            match self.tasks.iter().find(|t| t.id == id) {
+                Some(delete_task) => {
+                    println!("{}", format!("Deleted task {id}: {} \n", delete_task.description).cyan().bold());
+                    self.tasks.retain(|t| t.id != id);
+                    self.recalculate_task_ids();
+                }
+                None => println!("{}", format!("Task {id} not found\n").bright_red().bold()),
+            }
+        }
+    }
+
+    pub fn remove_tag(&mut self, tags: Vec<String>) {
+        for tag in tags {
+            let tag = Tag(tag);
+            println!("{}", format!("Deleting all occurrences of tasks with tag: {tag} \n").bold());
+            self.tasks.retain(|t| t.tag.as_ref() != Some(&tag));
+            self.recalculate_task_ids();
+        }
     }
 
     pub fn order_completed(&mut self) {
@@ -232,4 +268,5 @@ impl TaskManager {
         self.tasks.sort_by(|a, b| a.tag.cmp(&b.tag));
         self.recalculate_task_ids();
     }
+
 }

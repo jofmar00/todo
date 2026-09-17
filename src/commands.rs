@@ -12,22 +12,26 @@ pub enum Command {
     /// Mark a task as done
     Done {
         /// Task ID
-        id: u32,
+        #[arg(required = true, num_args = 1..)]
+        ids: Vec<u32>,
     },
     /// Unmark a task as done
     Undone {
         /// Task ID
-        id: u32,
+        #[arg(required = true, num_args = 1..)]
+        ids: Vec<u32>,
     },
     /// Remove a task
     Rm {
         /// Task ID
-        id: u32,
+        #[arg(required = true, num_args = 1..)]
+        ids: Vec<u32>,
     },
     /// Remove all the tasks assign to a tag
     Rmtag {
         /// Tag
-        tag: String
+        #[arg(required = true, num_args = 1..)]
+        tags: Vec<String>,
     },
     /// Assign a tag to a task
     Tag {
@@ -37,16 +41,18 @@ pub enum Command {
         /// Tag
         tag: String
     },
-    /// Select the tag to work with, filtering the task list and tagging new tasks by default
+    /// Use a specific tag in listing and creation of new tags
     Use {
         /// Tag
         tag: Option<String>
    },
     /// Order completed tasks to be first in the list
     Order,
+    /// List all tags
+    Lstags,
     /// List all tasks
     Ls {
         /// Tag
-        tag: Option<String>
-    }
+        tags: Vec<String>
+    },
 }
