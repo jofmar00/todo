@@ -1,12 +1,14 @@
 use clap::{Parser, Subcommand};
 
+use crate::task::TaskManager;
+
 /// A simple command-line to-do list manager. Made by @jofmar00 in Rust.
 #[derive(Parser)]
 #[command(version)]
 pub struct Args {
     /// Subcommand to run.
     #[command(subcommand)]
-    pub cmd: Command,
+    pub cmd: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -70,4 +72,25 @@ pub enum Command {
         #[arg(required = true, num_args = 1..)]
         tags: Vec<String>,
     },
+}
+
+impl Command {
+    pub fn execute(self, tasks: &mut TaskManager) {
+        let mut ls_tags = Vec::new();
+        let mut show_list = true;
+        match self {
+            Command::Add { description, tag } => tasks.add(description, tag),
+            Command::Ls { tags } => ls_tags = tags,
+            Command::Done { ids } => tasks.mark_done(ids),
+            Command::Undone { ids } => tasks.mark_undone(ids),
+            Command::Rm { ids } => tasks.remove(ids),
+            Command::Order => tasks.order_completed(),
+            Command::Tag { id, tag } => tasks.tag(id, tag),
+            Command::Lstags => { tasks.list_tags(); show_list = false; },
+            Command::Use { tag } => tasks.use_tag(tag),
+            Command::Rename { original, new } => tasks.rename_tag(original, new),
+            Command::Rmtag { tags } => tasks.remove_tag(tags),
+        }
+        if show_list { tasks.list(ls_tags); }
+    }
 }

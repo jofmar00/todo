@@ -85,6 +85,32 @@ impl TaskManager {
             .for_each(|(i, task)| task.id = i as u32 + 1);
     }
 
+    // TODO: Arreglar esto es lentisimo recorremos la lista
+    // buscando tags cada ved que buscamos un elemento
+    fn resolve_id(&self, id: u32) -> Option<u32> {
+        match &self.selected_tag {
+            // En default tag el id es el mismo
+            None => Some(id),
+            // En otros tags tenemos que encontrar el id real
+            Some(tag) => {
+                self.tasks.iter()
+                    .filter(|t| t.tag.as_ref() == Some(tag))
+                    .enumerate()
+                    .find(|(i, _)| id == *i as u32 + 1)
+                    .map(|(_, task)| task.id)
+            }
+        }
+    }
+
+    fn resolve_task(&self, id: u32) -> Option<&Task> {
+        let real_id = self.resolve_id(id)?;
+        self.tasks.iter().find(|t| t.id == real_id)
+    }
+
+    fn resolve_task_mut(&mut self, id: u32) -> Option<&mut Task> {
+        let real_id = self.resolve_id(id)?;
+        self.tasks.iter_mut().find(|t| t.id == real_id)
+    }
     // ---------------------------
     // Public functions
     // ---------------------------
@@ -168,7 +194,7 @@ impl TaskManager {
 
     pub fn mark_done(&mut self, ids: Vec<u32>) {
         for id in ids {
-            match self.tasks.iter_mut().find(|t| t.id == id) {
+            match self.resolve_task_mut(id) {
                 Some(task) => task.completed = true,
                 None => println!("{}", format!("Task {id} not found").bright_red().bold()),
             }
@@ -177,7 +203,7 @@ impl TaskManager {
 
     pub fn mark_undone(&mut self, ids: Vec<u32>) {
         for id in ids {
-            match self.tasks.iter_mut().find(|t| t.id == id) {
+            match self.resolve_task_mut(id) {
                 Some(task) => task.completed = false,
                 None => println!("{}", format!("Task {id} not found").bright_red().bold()),
             }
@@ -186,7 +212,7 @@ impl TaskManager {
 
     pub fn remove(&mut self, ids: Vec<u32>) {
         for id in ids{
-            match self.tasks.iter().find(|t| t.id == id) {
+            match self.resolve_task(id) {
                 Some(delete_task) => {
                     println!("{}", format!("Deleted task {id}: {}", delete_task.description).cyan().bold());
                     self.tasks.retain(|t| t.id != id);
