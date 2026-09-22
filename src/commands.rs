@@ -14,6 +14,7 @@ pub struct Args {
 #[derive(Subcommand)]
 pub enum Command {
     /// Add a task
+    #[command(alias = "a")]
     Add {
         /// Task message description
         description: String,
@@ -21,6 +22,7 @@ pub enum Command {
         tag: Option<String>,
     },
     /// List all tasks
+    #[command(alias = "l")]
     Ls {
         /// Tag
         tags: Vec<String>
@@ -72,6 +74,8 @@ pub enum Command {
         #[arg(required = true, num_args = 1..)]
         tags: Vec<String>,
     },
+    /// Show progress of actual tag
+    Progress,
 }
 
 impl Command {
@@ -90,6 +94,7 @@ impl Command {
             Command::Use { tag } => tasks.use_tag(tag),
             Command::Rename { original, new } => tasks.rename_tag(original, new),
             Command::Rmtag { tags } => tasks.remove_tag(tags),
+            Command::Progress => { tasks.show_progress(); show_list = false; },
         }
         if show_list { tasks.list(ls_tags); }
     }

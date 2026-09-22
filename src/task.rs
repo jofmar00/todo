@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet, error::Error, fmt::Display, fs::OpenOptions, hash::{DefaultHasher, Hash, Hasher}, io::{ErrorKind, Write},
+    collections::{BTreeMap, BTreeSet}, env, error::Error, fmt::Display, fs::OpenOptions, hash::{DefaultHasher, Hash, Hasher}, io::ErrorKind, os::unix::process::parent_id, path::PathBuf,
 };
 
 use colored::Colorize;
@@ -11,14 +11,18 @@ const TODO_FILENAME: &str = ".todo_list";
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Tag(String);
-impl Display for Tag {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Tag {
+    pub fn get_color(&self) -> (u8, u8, u8) {
         let mut hasher = DefaultHasher::new();
         self.0.hash(&mut hasher);
         let hue = (hasher.finish() % 360) as f64;
         let rgb: Rgb = Hsl::new(hue, 65.0, 60.0, None).into();
-        let (r, g, b) = (rgb.red().round() as u8, rgb.green().round() as u8, rgb.blue().round() as u8);
-
+        (rgb.red().round() as u8, rgb.green().round() as u8, rgb.blue().round() as u8)
+    }
+}
+impl Display for Tag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (r, g, b) = self.get_color();
         write!(f, "{}", format!("#{}", self.0).truecolor(r, g, b))
     }
 }
@@ -34,9 +38,8 @@ struct Task {
 
 impl Display for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let id_width = f.width().unwrap_or(1);
         let status = if self.completed { "[x]".bright_green().bold() } else { "[ ]".bold() };
-        write!(f, "{:>id_width$} {status} ", self.id)?;
+        write!(f, "{status}")?;
 
         if let Some(tag) = &self.tag {
             write!(f, "({})", tag)?;
@@ -111,6 +114,13 @@ impl TaskManager {
         let real_id = self.resolve_id(id)?;
         self.tasks.iter_mut().find(|t| t.id == real_id)
     }
+
+    // El tag seleccionado es por sesión de terminal: se guarda en un fichero
+    // temporal identificado por el PID de la shell (proceso padre), que es
+    // el mismo para todos los `todo` lanzados desde esa terminal.
+    fn session_tag_path() -> PathBuf {
+        env::temp_dir().join(format!(".todo_tag_{}", parent_id()))
+    }
     // ---------------------------
     // Public functions
     // ---------------------------
@@ -119,21 +129,18 @@ impl TaskManager {
         let path = home.join(TODO_FILENAME);
         let mut tasks = Vec::new();
 
+        let selected_tag = std::fs::read_to_string(Self::session_tag_path()).ok().map(Tag);
+
         let contents = match std::fs::read_to_string(&path) {
             Ok(contents) => contents,
             Err(e) if e.kind() == ErrorKind::NotFound => {
-                return Ok(Self { tasks, selected_tag: None });
+                return Ok(Self { tasks, selected_tag });
             }
             Err(e) => return Err(format!("No se pudo leer el fichero {}: {e}", path.display()).into()),
         };
 
-        // Obtain tag
-        let mut lines = contents.lines();
-        let selected_tag = lines.next().filter(|l| *l != DEFAULT_TAG).map(String::from).map(Tag);
-        let rest = lines.collect::<Vec<_>>().join("\n");
-
         // Load tasks in memory
-        let mut csv_reader = csv::ReaderBuilder::new().from_reader(rest.as_bytes());
+        let mut csv_reader = csv::ReaderBuilder::new().from_reader(contents.as_bytes());
         for (i, result) in csv_reader.deserialize().enumerate() {
             let mut task: Task = result
                 .map_err(|e| format!("No se pudo parsear el CSV de {}: {e}", path.display()))?;
@@ -148,15 +155,17 @@ impl TaskManager {
         let path = home.join(TODO_FILENAME);
         let save_err = |e: &dyn Display| format!("No se pudo guardar el fichero {}: {e}", path.display());
 
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .open(&path)
             .map_err(|e| save_err(&e))?;
 
-        writeln!(file, "{}", self.selected_tag.as_ref().map(|t| t.0.as_str()).unwrap_or(DEFAULT_TAG))
-            .map_err(|e| save_err(&e))?;
+        match &self.selected_tag {
+            Some(tag) => std::fs::write(Self::session_tag_path(), &tag.0).map_err(|e| save_err(&e))?,
+            None => { let _ = std::fs::remove_file(Self::session_tag_path()); }
+        }
 
         let mut csv_wtr = csv::WriterBuilder::new().from_writer(file);
         for task in &self.tasks {
@@ -179,17 +188,22 @@ impl TaskManager {
         let id_width = self.tasks.len().max(1).to_string().len();
         let wanted_tags: BTreeSet<Tag> = tags.into_iter().map(Tag).collect();
 
+        if self.selected_tag.is_none() && self.tasks.is_empty() {
+            println!("No tasks inserted yet, try using {}", "todo help".italic().bold());
+        }
+
         if let Some(selected_tag) = &self.selected_tag {
             println!("Using tag {selected_tag}");
         }
-        
+
         self.tasks.iter()
             .filter(|task| if wanted_tags.is_empty() {
                 self.selected_tag.is_none() || task.tag == self.selected_tag
             } else {
                 task.tag.as_ref().is_some_and(|tag| wanted_tags.contains(tag))
             })
-            .for_each(|task| println!("{task:id_width$}"));
+            .enumerate()
+            .for_each(|(i, task)| println!("{:>id_width$} {task}", i as u32 + 1));
     }
 
     pub fn mark_done(&mut self, ids: Vec<u32>) {
@@ -214,13 +228,13 @@ impl TaskManager {
         for id in ids{
             match self.resolve_task(id) {
                 Some(delete_task) => {
-                    println!("{}", format!("Deleted task {id}: {}", delete_task.description).cyan().bold());
-                    self.tasks.retain(|t| t.id != id);
+                    let delete_id = delete_task.id;
+                    println!("Deleted task {id}: {}", delete_task.description.bright_blue().bold());
+                    self.tasks.retain(|t| t.id != delete_id);
                 }
                 None => println!("{}", format!("Task {id} not found").bright_red().bold()),
             }
         }
-        println!();
         self.recalculate_task_ids();
     }
 
@@ -273,5 +287,47 @@ impl TaskManager {
         self.tasks.iter_mut()
             .filter(|t| t.tag.as_ref() == Some(&original))
             .for_each(|t| t.tag = Some(new.clone()));
+    }
+
+    pub fn show_progress(&self) {
+        const BAR_WIDTH: usize = 20;
+
+        if self.tasks.is_empty() {
+            println!("No tasks inserted yet, try using {}", "todo help".italic().bold());
+            return;
+        }
+
+        let mut completed_per_tag: BTreeMap<Option<Tag>, (usize, usize)> = BTreeMap::new();
+        for task in &self.tasks {
+            let entry = completed_per_tag.entry(task.tag.clone()).or_insert((0, 0));
+            entry.0 += task.completed as usize;
+            entry.1 += 1;
+        }
+
+        let label_width = completed_per_tag.keys()
+            .map(|tag| tag.as_ref().map_or(DEFAULT_TAG.len() + 1, |t| t.0.len() + 1))
+            .max()
+            .unwrap_or(0);
+
+        for (tag, (done, total)) in completed_per_tag {
+            // Tag color
+            let (r, g, b) = match &tag {
+                Some(tag) => tag.get_color(),
+                None => (255, 255, 255),
+            };
+
+            let percent = (done * 100 / total) as u32;
+            let filled = (BAR_WIDTH as f32 * percent as f32 / 100.0).round() as usize;
+            let bar = format!("[{}{}]", "█".repeat(filled).truecolor(r, g, b).bold(), " ".repeat(BAR_WIDTH - filled));
+
+            // El texto plano se rellena antes de colorear, ya que los códigos
+            // ANSI cuentan como caracteres para el padding de `{:<width$}`.
+            let (label, plain_len) = match tag {
+                Some(tag) => (tag.to_string(), tag.0.len() + 1),
+                None => (format!("#{DEFAULT_TAG}"), DEFAULT_TAG.len() + 1),
+            };
+            let padding = " ".repeat(label_width.saturating_sub(plain_len));
+            println!("{label}{padding} {bar} {percent:>3}% ({done}/{total})");
+        }
     }
 }
