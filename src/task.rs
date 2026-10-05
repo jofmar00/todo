@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 const DEFAULT_TAG: &str = "default";
 const TODO_FILENAME: &str = ".todo";
 const TODO_ENV: &str = "TODO_PATH";
+const SESSION_ENV: &str = "TODO_SESSION_FILE";
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Tag(String);
@@ -113,8 +114,13 @@ impl TaskManager {
     // El tag seleccionado es por sesión de terminal: se guarda en un fichero
     // temporal identificado por el PID de la shell (proceso padre), que es
     // el mismo para todos los `todo` lanzados desde esa terminal.
+    // TODO_SESSION_FILE permite fijar otra ruta (lo usan los tests para no
+    // compartir el tag entre procesos lanzados en paralelo).
     fn resolve_session_tag_path() -> PathBuf {
-        env::temp_dir().join(format!(".todo_tag_{}", parent_id()))
+        match env::var_os(SESSION_ENV) {
+            Some(path) if !path.is_empty() => PathBuf::from(path),
+            _ => env::temp_dir().join(format!(".todo_tag_{}", parent_id())),
+        }
     }
 
     // El fichero de tareas se busca en el directorio indicado por TODO_PATH,
@@ -351,3 +357,6 @@ impl TaskManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
