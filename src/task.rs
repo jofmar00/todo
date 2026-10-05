@@ -151,7 +151,7 @@ impl TaskManager {
         let contents = match std::fs::read_to_string(&path) {
             Ok(contents) => contents,
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Self { tasks: Vec::new(), selected_tag }),
-            Err(e) => return Err(format!("No se pudo leer el fichero {}: {e}", path.display()).into()),
+            Err(e) => return Err(format!("Could not read file {}: {e}", path.display()).into()),
         };
 
         // Load tasks in memory
@@ -162,7 +162,7 @@ impl TaskManager {
 
     pub fn save_all(&self) -> Result<(), Box<dyn Error>> {
         let path = Self::resolve_todo_path()?;
-        let save_err = |e: &dyn Display| format!("No se pudo guardar el fichero {}: {e}", path.display());
+        let save_err = |e: &dyn Display| format!("Could not save file {}: {e}", path.display());
 
         let file = OpenOptions::new()
             .write(true)
