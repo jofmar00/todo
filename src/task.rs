@@ -4,6 +4,7 @@ use std::{
 
 use colored::Colorize;
 use colorsys::{Hsl, Rgb};
+use csv::Reader;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_TAG: &str = "default";
@@ -89,8 +90,6 @@ impl TaskManager {
             .for_each(|(i, task)| task.id = i as u32 + 1);
     }
 
-    // TODO: Arreglar esto es lentisimo recorremos la lista
-    // buscando tags cada ved que buscamos un elemento
     fn resolve_id(&self, id: u32) -> Option<u32> {
         match &self.selected_tag {
             // En default tag el id es el mismo
@@ -128,35 +127,36 @@ impl TaskManager {
     fn resolve_todo_path() -> Result<PathBuf, Box<dyn Error>> {
         let dir = match env::var_os(TODO_ENV) {
             Some(dir) if !dir.is_empty() => PathBuf::from(dir),
-            _ => dirs::home_dir().ok_or("Could not get a proper path to create a .todo file, set the env TODO_ENV to a proper value to continue".red())?,
+            _ => dirs::home_dir().ok_or(format!("Could not get a proper path to create a .todo file, set the env {TODO_ENV} to a proper value to continue"))?,
         };
         Ok(dir.join(TODO_FILENAME))
+    }
+
+    fn parse_tasks(mut reader: Reader<&[u8]>) -> Result<Vec<Task>, Box<dyn Error>> {
+        let mut tasks = Vec::new();
+        for (i, result) in reader.deserialize().enumerate() {
+            let mut task: Task = result.map_err(|e| format!("Could not parse .todo file: {e}"))?;
+            task.id = i as u32 + 1;
+            tasks.push(task);
+        }
+        Ok(tasks)
     }
     // ---------------------------
     // Public functions
     // ---------------------------
     pub fn build() -> Result<Self, Box<dyn Error>> {
         let path = Self::resolve_todo_path()?;
-        let mut tasks = Vec::new();
-
         let selected_tag = std::fs::read_to_string(Self::resolve_session_tag_path()).ok().map(Tag);
 
         let contents = match std::fs::read_to_string(&path) {
             Ok(contents) => contents,
-            Err(e) if e.kind() == ErrorKind::NotFound => {
-                return Ok(Self { tasks, selected_tag });
-            }
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Self { tasks: Vec::new(), selected_tag }),
             Err(e) => return Err(format!("No se pudo leer el fichero {}: {e}", path.display()).into()),
         };
 
         // Load tasks in memory
-        let mut csv_reader = csv::ReaderBuilder::new().from_reader(contents.as_bytes());
-        for (i, result) in csv_reader.deserialize().enumerate() {
-            let mut task: Task = result
-                .map_err(|e| format!("No se pudo parsear el CSV de {}: {e}", path.display()))?;
-            task.id = i as u32 + 1;
-            tasks.push(task);
-        }
+        let csv_reader = csv::ReaderBuilder::new().from_reader(contents.as_bytes());
+        let tasks = Self::parse_tasks(csv_reader)?;
         Ok(Self { tasks, selected_tag })
     }
 

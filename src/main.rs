@@ -4,12 +4,13 @@ mod task;
 use commands::Args;
 use std::error::Error;
 use clap::Parser;
+use colored::Colorize;
 
 use crate::task::TaskManager;
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("Error: {e}");
+        eprintln!("{} {e}", "Error:".red());
         std::process::exit(1);
     }
 }
