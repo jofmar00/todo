@@ -105,11 +105,6 @@ impl TaskManager {
         }
     }
 
-    fn resolve_task(&self, id: u32) -> Option<&Task> {
-        let real_id = self.resolve_id(id)?;
-        self.tasks.iter().find(|t| t.id == real_id)
-    }
-
     fn resolve_task_mut(&mut self, id: u32) -> Option<&mut Task> {
         let real_id = self.resolve_id(id)?;
         self.tasks.iter_mut().find(|t| t.id == real_id)
@@ -205,14 +200,25 @@ impl TaskManager {
             println!("Using tag {selected_tag}");
         }
 
+        // El id mostrado es el que aceptan los comandos: la posición dentro del
+        // tag seleccionado. Las tareas de otros tags no son direccionables
+        // desde aquí, así que se muestran con "-"
+        let command_ids: BTreeMap<u32, u32> = self.tasks.iter()
+            .filter(|task| self.selected_tag.is_none() || task.tag == self.selected_tag)
+            .enumerate()
+            .map(|(i, task)| (task.id, i as u32 + 1))
+            .collect();
+
         self.tasks.iter()
             .filter(|task| if wanted_tags.is_empty() {
                 self.selected_tag.is_none() || task.tag == self.selected_tag
             } else {
                 task.tag.as_ref().is_some_and(|tag| wanted_tags.contains(tag))
             })
-            .enumerate()
-            .for_each(|(i, task)| println!("{:>id_width$} {task}", i as u32 + 1));
+            .for_each(|task| match command_ids.get(&task.id) {
+                Some(id) => println!("{id:>id_width$} {task}"),
+                None => println!("{:>id_width$} {task}", "-"),
+            });
     }
 
     pub fn mark_done(&mut self, ids: Vec<u32>) {
@@ -234,12 +240,17 @@ impl TaskManager {
     }
 
     pub fn remove(&mut self, ids: Vec<u32>) {
-        for id in ids{
-            match self.resolve_task(id) {
-                Some(delete_task) => {
-                    let delete_id = delete_task.id;
+        // Resolvemos todos los ids antes de borrar: al borrar una tarea las
+        // posiciones dentro del tag se desplazan y apuntarían a otra tarea
+        let resolved: Vec<(u32, Option<u32>)> = ids.into_iter()
+            .map(|id| (id, self.resolve_id(id)))
+            .collect();
+
+        for (id, real_id) in resolved {
+            match real_id.and_then(|real_id| self.tasks.iter().position(|t| t.id == real_id)) {
+                Some(pos) => {
+                    let delete_task = self.tasks.remove(pos);
                     println!("Deleted task {id}: {}", delete_task.description.bright_blue().bold());
-                    self.tasks.retain(|t| t.id != delete_id);
                 }
                 None => println!("{}", format!("Task {id} not found").bright_red().bold()),
             }
@@ -256,7 +267,7 @@ impl TaskManager {
     // Tag management 
     // ---------------------------
     pub fn tag(&mut self, id: u32, tag: String) {
-        match self.tasks.iter_mut().find(|t| t.id == id) {
+        match self.resolve_task_mut(id) {
             Some(task) => task.tag = Some(Tag(tag)),
             None => println!("{}", format!("Task {id} not found").bright_red().bold()),
         }
