@@ -7,7 +7,8 @@ use colorsys::{Hsl, Rgb};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_TAG: &str = "default";
-const TODO_FILENAME: &str = ".todo_list";
+const TODO_FILENAME: &str = ".todo";
+const TODO_ENV: &str = "TODO_PATH";
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Tag(String);
@@ -118,18 +119,27 @@ impl TaskManager {
     // El tag seleccionado es por sesión de terminal: se guarda en un fichero
     // temporal identificado por el PID de la shell (proceso padre), que es
     // el mismo para todos los `todo` lanzados desde esa terminal.
-    fn session_tag_path() -> PathBuf {
+    fn resolve_session_tag_path() -> PathBuf {
         env::temp_dir().join(format!(".todo_tag_{}", parent_id()))
+    }
+
+    // El fichero de tareas se busca en el directorio indicado por TODO_PATH,
+    // y si no está definida (o está vacía) en el home del usuario.
+    fn resolve_todo_path() -> Result<PathBuf, Box<dyn Error>> {
+        let dir = match env::var_os(TODO_ENV) {
+            Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+            _ => dirs::home_dir().ok_or("Could not get a proper path to create a .todo file, set the env TODO_ENV to a proper value to continue".red())?,
+        };
+        Ok(dir.join(TODO_FILENAME))
     }
     // ---------------------------
     // Public functions
     // ---------------------------
     pub fn build() -> Result<Self, Box<dyn Error>> {
-        let home = dirs::home_dir().ok_or("No se pudo determinar el directorio home")?;
-        let path = home.join(TODO_FILENAME);
+        let path = Self::resolve_todo_path()?;
         let mut tasks = Vec::new();
 
-        let selected_tag = std::fs::read_to_string(Self::session_tag_path()).ok().map(Tag);
+        let selected_tag = std::fs::read_to_string(Self::resolve_session_tag_path()).ok().map(Tag);
 
         let contents = match std::fs::read_to_string(&path) {
             Ok(contents) => contents,
@@ -151,8 +161,7 @@ impl TaskManager {
     }
 
     pub fn save_all(&self) -> Result<(), Box<dyn Error>> {
-        let home = dirs::home_dir().ok_or("No se pudo determinar el directorio home")?;
-        let path = home.join(TODO_FILENAME);
+        let path = Self::resolve_todo_path()?;
         let save_err = |e: &dyn Display| format!("No se pudo guardar el fichero {}: {e}", path.display());
 
         let file = OpenOptions::new()
@@ -163,8 +172,8 @@ impl TaskManager {
             .map_err(|e| save_err(&e))?;
 
         match &self.selected_tag {
-            Some(tag) => std::fs::write(Self::session_tag_path(), &tag.0).map_err(|e| save_err(&e))?,
-            None => { let _ = std::fs::remove_file(Self::session_tag_path()); }
+            Some(tag) => std::fs::write(Self::resolve_session_tag_path(), &tag.0).map_err(|e| save_err(&e))?,
+            None => { let _ = std::fs::remove_file(Self::resolve_session_tag_path()); }
         }
 
         let mut csv_wtr = csv::WriterBuilder::new().from_writer(file);
