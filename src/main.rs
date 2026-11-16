@@ -1,12 +1,11 @@
 mod commands;
 mod task;
 
-use commands::Args;
-use std::error::Error;
+use crate::task::TaskManager;
 use clap::Parser;
 use colored::Colorize;
-
-use crate::task::TaskManager;
+use commands::Args;
+use std::error::Error;
 
 fn main() {
     if let Err(e) = run() {

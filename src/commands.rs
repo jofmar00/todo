@@ -1,6 +1,5 @@
-use clap::{Parser, Subcommand};
-
 use crate::task::TaskManager;
+use clap::{Parser, Subcommand};
 
 /// A simple command-line to-do list manager. Made by @jofmar00 in Rust.
 #[derive(Parser)]
@@ -25,7 +24,7 @@ pub enum Command {
     #[command(alias = "l")]
     Ls {
         /// Tag
-        tags: Vec<String>
+        tags: Vec<String>,
     },
     /// Mark a task as done
     Done {
@@ -54,20 +53,17 @@ pub enum Command {
         id: u32,
 
         /// Tag
-        tag: String
+        tag: String,
     },
     /// List all tags
     Lstags,
     /// Use a specific tag in listing and creation of new tags
     Use {
         /// Tag
-        tag: Option<String>
-   },
-    /// Rename tag
-    Rename {
-        original: String,
-        new: String,
+        tag: Option<String>,
     },
+    /// Rename tag
+    Rename { original: String, new: String },
     /// Remove all the tasks assign to a tag
     Rmtag {
         /// Tag
@@ -90,12 +86,20 @@ impl Command {
             Command::Rm { ids } => tasks.remove(ids),
             Command::Order => tasks.order_completed(),
             Command::Tag { id, tag } => tasks.tag(id, tag),
-            Command::Lstags => { tasks.list_tags(); show_list = false; },
+            Command::Lstags => {
+                tasks.list_tags();
+                show_list = false;
+            }
             Command::Use { tag } => tasks.use_tag(tag),
             Command::Rename { original, new } => tasks.rename_tag(original, new),
             Command::Rmtag { tags } => tasks.remove_tag(tags),
-            Command::Progress => { tasks.show_progress(); show_list = false; },
+            Command::Progress => {
+                tasks.show_progress();
+                show_list = false;
+            }
         }
-        if show_list { tasks.list(ls_tags); }
+        if show_list {
+            tasks.list(ls_tags);
+        }
     }
 }

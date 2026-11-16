@@ -4,11 +4,17 @@ use super::*;
 // Helpers
 // ---------------------------
 fn manager(selected: Option<&str>, tasks: &[(&str, Option<&str>)]) -> TaskManager {
-    let tasks = tasks.iter()
+    let tasks = tasks
+        .iter()
         .enumerate()
-        .map(|(i, (description, tag))| Task::new(i as u32 + 1, description.to_string(), tag.map(|t| Tag(t.into()))))
+        .map(|(i, (description, tag))| {
+            Task::new(i as u32 + 1, description.to_string(), tag.map(|t| Tag(t.into())))
+        })
         .collect();
-    TaskManager { tasks, selected_tag: selected.map(|t| Tag(t.into())) }
+    TaskManager {
+        tasks,
+        selected_tag: selected.map(|t| Tag(t.into())),
+    }
 }
 
 fn descriptions(tm: &TaskManager) -> Vec<&str> {
@@ -20,7 +26,8 @@ fn ids(tm: &TaskManager) -> Vec<u32> {
 }
 
 fn tag_of<'a>(tm: &'a TaskManager, description: &str) -> Option<&'a str> {
-    tm.tasks.iter()
+    tm.tasks
+        .iter()
         .find(|t| t.description == description)
         .and_then(|t| t.tag.as_ref())
         .map(|t| t.0.as_str())
@@ -28,11 +35,15 @@ fn tag_of<'a>(tm: &'a TaskManager, description: &str) -> Option<&'a str> {
 
 // A(work) B() C(work) D(work)
 fn mixed(selected_tag: Option<&str>) -> TaskManager {
-    manager(selected_tag,
-            &[("A", Some("work")),
-              ("B", None),
-              ("C", Some("work")),
-              ("D", Some("work"))])
+    manager(
+        selected_tag,
+        &[
+            ("A", Some("work")),
+            ("B", None),
+            ("C", Some("work")),
+            ("D", Some("work")),
+        ],
+    )
 }
 
 // ---------------------------

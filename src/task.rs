@@ -1,11 +1,18 @@
-use std::{
-    collections::{BTreeMap, BTreeSet}, env, error::Error, fmt::Display, fs::OpenOptions, hash::{DefaultHasher, Hash, Hasher}, io::ErrorKind, os::unix::process::parent_id, path::PathBuf,
-};
-
 use colored::Colorize;
 use colorsys::{Hsl, Rgb};
 use csv::Reader;
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+    error::Error,
+    fmt::Display,
+    fs::OpenOptions,
+    hash::{DefaultHasher, Hash, Hasher},
+    io::ErrorKind,
+    os::unix::process::parent_id,
+    path::PathBuf,
+};
 
 const DEFAULT_TAG: &str = "default";
 const TODO_FILENAME: &str = ".todo";
@@ -20,7 +27,11 @@ impl Tag {
         self.0.hash(&mut hasher);
         let hue = (hasher.finish() % 360) as f64;
         let rgb: Rgb = Hsl::new(hue, 65.0, 60.0, None).into();
-        (rgb.red().round() as u8, rgb.green().round() as u8, rgb.blue().round() as u8)
+        (
+            rgb.red().round() as u8,
+            rgb.green().round() as u8,
+            rgb.blue().round() as u8,
+        )
     }
 }
 impl Display for Tag {
@@ -36,18 +47,21 @@ struct Task {
     id: u32,
     description: String,
     completed: bool,
-    tag: Option<Tag>
+    tag: Option<Tag>,
 }
 
 impl Display for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let status = if self.completed { "[x]".bright_green().bold() } else { "[ ]".bold() };
+        let status = if self.completed {
+            "[x]".bright_green().bold()
+        } else {
+            "[ ]".bold()
+        };
         write!(f, "{status}")?;
 
         if let Some(tag) = &self.tag {
             write!(f, "({})", tag)?;
-        }
-        else {
+        } else {
             write!(f, "()")?;
         }
 
@@ -86,7 +100,8 @@ impl TaskManager {
     }
 
     fn recalculate_task_ids(&mut self) {
-        self.tasks.iter_mut()
+        self.tasks
+            .iter_mut()
             .enumerate()
             .for_each(|(i, task)| task.id = i as u32 + 1);
     }
@@ -96,13 +111,13 @@ impl TaskManager {
             // En default tag el id es el mismo
             None => Some(id),
             // En otros tags tenemos que encontrar el id real
-            Some(tag) => {
-                self.tasks.iter()
-                    .filter(|t| t.tag.as_ref() == Some(tag))
-                    .enumerate()
-                    .find(|(i, _)| id == *i as u32 + 1)
-                    .map(|(_, task)| task.id)
-            }
+            Some(tag) => self
+                .tasks
+                .iter()
+                .filter(|t| t.tag.as_ref() == Some(tag))
+                .enumerate()
+                .find(|(i, _)| id == *i as u32 + 1)
+                .map(|(_, task)| task.id),
         }
     }
 
@@ -147,11 +162,18 @@ impl TaskManager {
     // ---------------------------
     pub fn build() -> Result<Self, Box<dyn Error>> {
         let path = Self::resolve_todo_path()?;
-        let selected_tag = std::fs::read_to_string(Self::resolve_session_tag_path()).ok().map(Tag);
+        let selected_tag = std::fs::read_to_string(Self::resolve_session_tag_path())
+            .ok()
+            .map(Tag);
 
         let contents = match std::fs::read_to_string(&path) {
             Ok(contents) => contents,
-            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Self { tasks: Vec::new(), selected_tag }),
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                return Ok(Self {
+                    tasks: Vec::new(),
+                    selected_tag,
+                });
+            }
             Err(e) => return Err(format!("Could not read file {}: {e}", path.display()).into()),
         };
 
@@ -173,8 +195,12 @@ impl TaskManager {
             .map_err(|e| save_err(&e))?;
 
         match &self.selected_tag {
-            Some(tag) => std::fs::write(Self::resolve_session_tag_path(), &tag.0).map_err(|e| save_err(&e))?,
-            None => { let _ = std::fs::remove_file(Self::resolve_session_tag_path()); }
+            Some(tag) => {
+                std::fs::write(Self::resolve_session_tag_path(), &tag.0).map_err(|e| save_err(&e))?
+            }
+            None => {
+                let _ = std::fs::remove_file(Self::resolve_session_tag_path());
+            }
         }
 
         let mut csv_wtr = csv::WriterBuilder::new().from_writer(file);
@@ -209,17 +235,22 @@ impl TaskManager {
         // El id mostrado es el que aceptan los comandos: la posición dentro del
         // tag seleccionado. Las tareas de otros tags no son direccionables
         // desde aquí, así que se muestran con "-"
-        let command_ids: BTreeMap<u32, u32> = self.tasks.iter()
+        let command_ids: BTreeMap<u32, u32> = self
+            .tasks
+            .iter()
             .filter(|task| self.selected_tag.is_none() || task.tag == self.selected_tag)
             .enumerate()
             .map(|(i, task)| (task.id, i as u32 + 1))
             .collect();
 
-        self.tasks.iter()
-            .filter(|task| if wanted_tags.is_empty() {
-                self.selected_tag.is_none() || task.tag == self.selected_tag
-            } else {
-                task.tag.as_ref().is_some_and(|tag| wanted_tags.contains(tag))
+        self.tasks
+            .iter()
+            .filter(|task| {
+                if wanted_tags.is_empty() {
+                    self.selected_tag.is_none() || task.tag == self.selected_tag
+                } else {
+                    task.tag.as_ref().is_some_and(|tag| wanted_tags.contains(tag))
+                }
             })
             .for_each(|task| match command_ids.get(&task.id) {
                 Some(id) => println!("{id:>id_width$} {task}"),
@@ -248,15 +279,16 @@ impl TaskManager {
     pub fn remove(&mut self, ids: Vec<u32>) {
         // Resolvemos todos los ids antes de borrar: al borrar una tarea las
         // posiciones dentro del tag se desplazan y apuntarían a otra tarea
-        let resolved: Vec<(u32, Option<u32>)> = ids.into_iter()
-            .map(|id| (id, self.resolve_id(id)))
-            .collect();
+        let resolved: Vec<(u32, Option<u32>)> = ids.into_iter().map(|id| (id, self.resolve_id(id))).collect();
 
         for (id, real_id) in resolved {
             match real_id.and_then(|real_id| self.tasks.iter().position(|t| t.id == real_id)) {
                 Some(pos) => {
                     let delete_task = self.tasks.remove(pos);
-                    println!("Deleted task {id}: {}", delete_task.description.bright_blue().bold());
+                    println!(
+                        "Deleted task {id}: {}",
+                        delete_task.description.bright_blue().bold()
+                    );
                 }
                 None => println!("{}", format!("Task {id} not found").bright_red().bold()),
             }
@@ -270,7 +302,7 @@ impl TaskManager {
         self.recalculate_task_ids();
     }
     // ---------------------------
-    // Tag management 
+    // Tag management
     // ---------------------------
     pub fn tag(&mut self, id: u32, tag: String) {
         match self.resolve_task_mut(id) {
@@ -281,26 +313,36 @@ impl TaskManager {
 
     pub fn list_tags(&self) {
         println!("#{DEFAULT_TAG}");
-        self.tasks.iter()
+        self.tasks
+            .iter()
             .filter_map(|t| t.tag.as_ref())
             // Pasamos a BTreeSet para evitar duplicados
             .collect::<BTreeSet<&Tag>>()
             .into_iter()
-            .for_each(|tag| { 
-                let current = if Some(tag) == self.selected_tag.as_ref() { " (Current)" } else { "" };
+            .for_each(|tag| {
+                let current = if Some(tag) == self.selected_tag.as_ref() {
+                    " (Current)"
+                } else {
+                    ""
+                };
                 println!("{tag}{current}");
             });
     }
 
     pub fn use_tag(&mut self, tag: Option<String>) {
         self.selected_tag = tag.filter(|t| t != DEFAULT_TAG).map(Tag);
-        if self.selected_tag.is_none() { println!("Using tag {DEFAULT_TAG}")};
+        if self.selected_tag.is_none() {
+            println!("Using tag {DEFAULT_TAG}")
+        };
     }
 
     pub fn remove_tag(&mut self, tags: Vec<String>) {
         for tag in tags {
             let tag = Tag(tag);
-            println!("{}", format!("Deleting all occurrences of tasks with tag: {tag} \n").bold());
+            println!(
+                "{}",
+                format!("Deleting all occurrences of tasks with tag: {tag} \n").bold()
+            );
             self.tasks.retain(|t| t.tag.as_ref() != Some(&tag));
         }
         self.recalculate_task_ids();
@@ -310,7 +352,8 @@ impl TaskManager {
         let original = Tag(original);
         let new = Tag(new);
         println!("{}", format!("Renaming tag {original} to {new}").bold());
-        self.tasks.iter_mut()
+        self.tasks
+            .iter_mut()
             .filter(|t| t.tag.as_ref() == Some(&original))
             .for_each(|t| t.tag = Some(new.clone()));
     }
@@ -330,7 +373,8 @@ impl TaskManager {
             entry.1 += 1;
         }
 
-        let label_width = completed_per_tag.keys()
+        let label_width = completed_per_tag
+            .keys()
             .map(|tag| tag.as_ref().map_or(DEFAULT_TAG.len() + 1, |t| t.0.len() + 1))
             .max()
             .unwrap_or(0);
@@ -344,7 +388,11 @@ impl TaskManager {
 
             let percent = (done * 100 / total) as u32;
             let filled = (BAR_WIDTH as f32 * percent as f32 / 100.0).round() as usize;
-            let bar = format!("[{}{}]", "█".repeat(filled).truecolor(r, g, b).bold(), " ".repeat(BAR_WIDTH - filled));
+            let bar = format!(
+                "[{}{}]",
+                "█".repeat(filled).truecolor(r, g, b).bold(),
+                " ".repeat(BAR_WIDTH - filled)
+            );
 
             // El texto plano se rellena antes de colorear, ya que los códigos
             // ANSI cuentan como caracteres para el padding de `{:<width$}`.
