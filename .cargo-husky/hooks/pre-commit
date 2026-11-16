@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -e
+export PATH="$HOME/.cargo/bin:$PATH"
+
+echo '> cargo clippy -- deny warnings'
+cargo clippy -- deny warnings
+echo '> cargo test --workspace'
+cargo test --workspace
+echo '> cargo +nightly fmt --all'
+cargo +nightly fmt --all
+
+git diff --cached --name-only -z --diff-filter=ACM -- '*.rs' | xargs -0 -r git add
