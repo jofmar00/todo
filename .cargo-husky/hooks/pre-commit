@@ -3,7 +3,7 @@ set -e
 export PATH="$HOME/.cargo/bin:$PATH"
 
 echo '> cargo clippy -- deny warnings'
-cargo clippy -- deny warnings
+cargo clippy --all-targets -- -D warnings
 echo '> cargo test --workspace'
 cargo test --workspace
 echo '> cargo +nightly fmt --all'

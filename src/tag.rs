@@ -1,9 +1,12 @@
 use crate::consts::{TAG_LIGHTNESS, TAG_SATURATION};
-use colored::{CustomColor, Colorize};
+use colored::{Colorize, CustomColor};
 use colorsys::{Hsl, Rgb};
 use serde::{Deserialize, Serialize};
 use std::{
-    convert::Infallible, fmt::Display, hash::{DefaultHasher, Hash, Hasher}, str::FromStr,
+    convert::Infallible,
+    fmt::Display,
+    hash::{DefaultHasher, Hash, Hasher},
+    str::FromStr,
 };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]

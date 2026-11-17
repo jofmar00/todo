@@ -1,13 +1,16 @@
 use crate::{
-    consts::{PROGRESS_BAR_WIDTH, SESSION_ENV_VAR, TAG_DEFAULT_NAME, TODO_FILENAME, TODO_PATH_ENV_VAR}, tag::Tag, task::{Task, TaskID},
+    consts::{
+        PROGRESS_BAR_WIDTH, SESSION_ENV_VAR, TAG_DEFAULT_NAME, TODO_FILENAME, TODO_PATH_ENV_VAR,
+    },
+    tag::Tag,
+    task::{Task, TaskID},
 };
 use colored::Colorize;
 use csv::Reader;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env, fs, io,
+    env, fs, io, os,
     path::{Path, PathBuf},
-    os
 };
 use thiserror::Error;
 
@@ -55,10 +58,7 @@ impl TaskManager {
         match env::var_os(SESSION_ENV_VAR) {
             Some(path) if !path.is_empty() => PathBuf::from(path),
             #[cfg(unix)]
-            _ => env::temp_dir().join(format!(
-                ".todo_tag_{}",
-                os::unix::process::parent_id()
-            )),
+            _ => env::temp_dir().join(format!(".todo_tag_{}", os::unix::process::parent_id())),
             #[cfg(not(unix))]
             _ => env::temp_dir().join(format!(".todo_tag_{}", std::process::id())),
         }
@@ -90,8 +90,7 @@ impl TaskManager {
 
     fn write_session_tag(path: &Path, tag: Option<&Tag>) -> TaskManagerResult {
         match tag {
-            Some(tag) => fs::write(path, &tag.0)
-                .map_err(TaskManagerError::SessionTagError),
+            Some(tag) => fs::write(path, &tag.0).map_err(TaskManagerError::SessionTagError),
             None => match fs::remove_file(path) {
                 Ok(()) => Ok(()),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -103,7 +102,7 @@ impl TaskManager {
     fn load_tasks(mut reader: Reader<&[u8]>) -> Result<Vec<Task>, TaskManagerError> {
         let mut tasks = Vec::new();
         for (i, result) in reader.deserialize().enumerate() {
-            let mut task: Task = result.map_err(|e| TaskManagerError::TaskParsingError(e))?;
+            let mut task: Task = result.map_err(TaskManagerError::TaskParsingError)?;
             task.id = i as u32 + 1;
             tasks.push(task);
         }
@@ -121,7 +120,10 @@ impl TaskManager {
         let csv_reader = csv::ReaderBuilder::new().from_reader(todo_file_contents.as_bytes());
         let tasks = Self::load_tasks(csv_reader)?;
         let selected_tag = Self::todo_tag()?;
-        Ok(Self { tasks, selected_tag })
+        Ok(Self {
+            tasks,
+            selected_tag,
+        })
     }
 
     pub fn save_tasks(&self) -> TaskManagerResult {
@@ -138,8 +140,8 @@ impl TaskManager {
         self.tasks
             .iter()
             .try_for_each(|task| writer.serialize(task))
-            .map_err(|e| TaskManagerError::TaskParsingError(e))?;
-        writer.flush().map_err(|e| TaskManagerError::SaveError(e))
+            .map_err(TaskManagerError::TaskParsingError)?;
+        writer.flush().map_err(TaskManagerError::SaveError)
     }
 
     // ---------------------------
@@ -180,7 +182,9 @@ impl TaskManager {
                 if wanted_tags.is_empty() {
                     self.selected_tag.is_none() || task.tag == self.selected_tag
                 } else {
-                    task.tag.as_ref().is_some_and(|tag| wanted_tags.contains(tag))
+                    task.tag
+                        .as_ref()
+                        .is_some_and(|tag| wanted_tags.contains(tag))
                 }
             })
             .for_each(|task| match command_ids.get(&task.id) {
@@ -191,17 +195,21 @@ impl TaskManager {
         Ok(())
     }
 
-    pub fn mark_done(&mut self, ids: Vec<TaskID>) -> TaskManagerResult{
+    pub fn mark_done(&mut self, ids: Vec<TaskID>) -> TaskManagerResult {
         for id in ids {
-            let task = self.get_task_mut(id).ok_or(TaskManagerError::TaskNotFound(id))?;
+            let task = self
+                .get_task_mut(id)
+                .ok_or(TaskManagerError::TaskNotFound(id))?;
             task.completed = true;
         }
         Ok(())
     }
 
-    pub fn mark_undone(&mut self, ids: Vec<TaskID>) -> TaskManagerResult{
+    pub fn mark_undone(&mut self, ids: Vec<TaskID>) -> TaskManagerResult {
         for id in ids {
-            let task = self.get_task_mut(id).ok_or(TaskManagerError::TaskNotFound(id))?;
+            let task = self
+                .get_task_mut(id)
+                .ok_or(TaskManagerError::TaskNotFound(id))?;
             task.completed = false;
         }
         Ok(())
@@ -224,7 +232,7 @@ impl TaskManager {
                         delete_task.description.bright_blue().bold()
                     );
                 }
-                None => return Err(TaskManagerError::TaskNotFound(id))
+                None => return Err(TaskManagerError::TaskNotFound(id)),
             }
         }
         self.recalculate_task_ids();
@@ -242,7 +250,7 @@ impl TaskManager {
     pub fn tag(&mut self, id: TaskID, tag: Tag) -> TaskManagerResult {
         match self.get_task_mut(id) {
             Some(task) => task.tag = Some(tag),
-            None => return Err(TaskManagerError::TaskNotFound(id))
+            None => return Err(TaskManagerError::TaskNotFound(id)),
         }
         Ok(())
     }
@@ -266,10 +274,7 @@ impl TaskManager {
 
     pub fn use_tag(&mut self, tag: Option<Tag>) -> TaskManagerResult {
         let selected_tag = tag.filter(|t| *t != Tag(TAG_DEFAULT_NAME.into()));
-        Self::write_session_tag(
-            &Self::resolve_session_tag_path(),
-            selected_tag.as_ref(),
-        )?;
+        Self::write_session_tag(&Self::resolve_session_tag_path(), selected_tag.as_ref())?;
         self.selected_tag = selected_tag;
         if self.selected_tag.is_none() {
             println!("Using tag {TAG_DEFAULT_NAME}")
@@ -310,7 +315,10 @@ impl TaskManager {
 
         let label_width = completed_per_tag
             .keys()
-            .map(|tag| tag.as_ref().map_or(TAG_DEFAULT_NAME.len() + 1, |t| t.0.len() + 1))
+            .map(|tag| {
+                tag.as_ref()
+                    .map_or(TAG_DEFAULT_NAME.len() + 1, |t| t.0.len() + 1)
+            })
             .max()
             .unwrap_or(0);
 
@@ -318,7 +326,11 @@ impl TaskManager {
             // Tag color
             let color = match &tag {
                 Some(tag) => tag.color(),
-                None => colored::CustomColor { r: 255, g: 255, b: 255 },
+                None => colored::CustomColor {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                },
             };
 
             let percent = (done * 100 / total) as u32;
@@ -345,24 +357,26 @@ impl TaskManager {
 
 #[derive(Error, Debug)]
 pub enum TaskManagerError {
-   #[error("no tasks inserted yet, try using {}", "todo help".italic().bold())]
-   NoTasksError,
+    #[error("no tasks inserted yet, try using {}", "todo help".italic().bold())]
+    NoTasksError,
 
-   #[error("could not get a proper path to create a .todo file, set the env {TODO_PATH_ENV_VAR} to a proper path to continue")]
-   FileNotFound,
+    #[error(
+        "could not get a proper path to create a .todo file, set the env {TODO_PATH_ENV_VAR} to a proper path to continue"
+    )]
+    FileNotFound,
 
-   #[error("task with id {0} not found")]
-   TaskNotFound(TaskID),
+    #[error("task with id {0} not found")]
+    TaskNotFound(TaskID),
 
-   #[error("tasks couldn't be saved: {0}")]
-   SaveError(io::Error),
+    #[error("tasks couldn't be saved: {0}")]
+    SaveError(io::Error),
 
-   #[error("couldn't load tasks: {0}")]
-   TaskLoadError(io::Error),
+    #[error("couldn't load tasks: {0}")]
+    TaskLoadError(io::Error),
 
-   #[error("couldn't read or save the session tag: {0}")]
-   SessionTagError(io::Error),
+    #[error("couldn't read or save the session tag: {0}")]
+    SessionTagError(io::Error),
 
-   #[error("couldn't parse task: {0}")]
-   TaskParsingError(csv::Error)
+    #[error("couldn't parse task: {0}")]
+    TaskParsingError(csv::Error),
 }

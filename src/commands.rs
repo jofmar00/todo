@@ -1,4 +1,8 @@
-use crate::{manager::{TaskManager, TaskManagerResult}, tag::Tag, task::TaskID};
+use crate::{
+    manager::{TaskManager, TaskManagerResult},
+    tag::Tag,
+    task::TaskID,
+};
 use clap::{Parser, Subcommand};
 
 /// A simple command-line to-do list manager. Made by @jofmar00 in Rust.

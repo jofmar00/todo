@@ -4,11 +4,10 @@ mod tag;
 mod task;
 
 pub mod manager;
-use crate::manager::TaskManager;
-use colored::Colorize;
-use crate::commands::Args;
-use std::error::Error;
+use crate::{commands::Args, manager::TaskManager};
 use clap::Parser;
+use colored::Colorize;
+use std::error::Error;
 
 fn main() {
     if let Err(e) = run() {
