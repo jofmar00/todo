@@ -5,15 +5,22 @@ use crate::{
     tag::Tag,
     task::{Task, TaskID},
 };
+#[cfg(test)]
+use bon::Builder;
 use colored::Colorize;
 use csv::Reader;
 use std::{
-    collections::{BTreeMap, BTreeSet}, default, env, fs, io, os, path::{Path, PathBuf},
+    collections::{BTreeMap, BTreeSet},
+    env, fs, io, os,
+    path::{Path, PathBuf},
 };
 use thiserror::Error;
 
+#[cfg_attr(test, derive(Builder))]
 pub struct TaskManager {
+    #[cfg_attr(test, builder(default))]
     tasks: Vec<Task>,
+
     selected_tag: Option<Tag>,
 }
 pub type TaskManagerResult = Result<(), TaskManagerError>;
@@ -377,4 +384,253 @@ pub enum TaskManagerError {
 
     #[error("couldn't parse task: {0}")]
     TaskParsingError(csv::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builder_defaults_to_empty_tasks_and_no_selected_tag() {
+        let manager = TaskManager::builder().build();
+
+        assert!(manager.tasks.is_empty());
+        assert!(manager.selected_tag.is_none());
+    }
+
+    #[test]
+    fn add_uses_selected_tag() {
+        let mut manager = TaskManager::builder().selected_tag("work".into()).build();
+
+        manager.add("Write tests".to_owned(), None);
+
+        assert_eq!(manager.tasks.len(), 1);
+        assert_eq!(manager.tasks[0].id, 1);
+        assert_eq!(manager.tasks[0].description, "Write tests");
+        assert_eq!(manager.tasks[0].tag, Some("work".into()));
+    }
+
+    #[test]
+    fn add_uses_explicit_tag() {
+        let mut manager = TaskManager::builder().selected_tag("work".into()).build();
+
+        manager.add("Write tests".to_owned(), Some("home".into()));
+
+        assert_eq!(manager.tasks[0].tag, Some("home".into()));
+    }
+
+    #[test]
+    fn done_resolves_id_with_selected_tag() {
+        let mut manager = TaskManager::builder()
+            .tasks(vec![
+                Task::builder().id(1).tag("work".into()).build(),
+                Task::builder().tag("home".into()).build(),
+                Task::builder().id(3).tag("work".into()).build(),
+            ])
+            .selected_tag("work".into())
+            .build();
+
+        manager.mark_done(vec![2]).unwrap();
+
+        assert_eq!(
+            manager
+                .tasks
+                .iter()
+                .map(|task| task.completed)
+                .collect::<Vec<_>>(),
+            [false, false, true]
+        );
+    }
+
+    #[test]
+    fn done_rejects_unknown_id_without_mutating_tasks() {
+        let mut manager = TaskManager::builder()
+            .tasks(vec![Task::builder().id(1).tag("work".into()).build()])
+            .selected_tag("work".into())
+            .build();
+
+        let result = manager.mark_done(vec![2]);
+
+        assert!(matches!(result, Err(TaskManagerError::TaskNotFound(2))));
+        assert!(manager.tasks.iter().all(|task| !task.completed));
+    }
+
+    #[test]
+    fn undone_clears_completion() {
+        let mut manager = TaskManager::builder()
+            .tasks(vec![Task::builder().id(1).completed(true).build()])
+            .build();
+
+        manager.mark_undone(vec![1]).unwrap();
+
+        assert!(!manager.tasks[0].completed);
+    }
+
+    #[test]
+    fn remove_handles_multiple_ids_with_selected_tag() {
+        let mut manager = TaskManager::builder()
+            .tasks(vec![
+                Task::builder()
+                    .id(1)
+                    .description("First work task".into())
+                    .tag("work".into())
+                    .build(),
+                Task::builder()
+                    .description("Home task".into())
+                    .tag("home".into())
+                    .build(),
+                Task::builder()
+                    .id(3)
+                    .description("Second work task".into())
+                    .tag("work".into())
+                    .build(),
+                Task::builder()
+                    .id(4)
+                    .description("Third work task".into())
+                    .tag("work".into())
+                    .build(),
+            ])
+            .selected_tag("work".into())
+            .build();
+
+        manager.remove(vec![1, 2]).unwrap();
+
+        assert_eq!(
+            manager
+                .tasks
+                .iter()
+                .map(|task| task.description.as_str())
+                .collect::<Vec<_>>(),
+            ["Home task", "Third work task"]
+        );
+        assert_eq!(
+            manager.tasks.iter().map(|task| task.id).collect::<Vec<_>>(),
+            [1, 2]
+        );
+    }
+
+    #[test]
+    fn order_completed_groups_by_tag() {
+        let mut manager = TaskManager::builder()
+            .tasks(vec![
+                Task::builder()
+                    .description("Z pending".into())
+                    .tag("z".into())
+                    .build(),
+                Task::builder()
+                    .description("Default done".into())
+                    .completed(true)
+                    .build(),
+                Task::builder()
+                    .description("B pending".into())
+                    .tag("b".into())
+                    .build(),
+                Task::builder()
+                    .description("A done".into())
+                    .completed(true)
+                    .tag("a".into())
+                    .build(),
+                Task::builder()
+                    .description("A pending".into())
+                    .tag("a".into())
+                    .build(),
+                Task::builder()
+                    .description("B done".into())
+                    .completed(true)
+                    .tag("b".into())
+                    .build(),
+            ])
+            .build();
+
+        manager.order_completed();
+
+        assert_eq!(
+            manager
+                .tasks
+                .iter()
+                .map(|task| task.description.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Default done",
+                "A done",
+                "A pending",
+                "B done",
+                "B pending",
+                "Z pending",
+            ]
+        );
+        assert_eq!(
+            manager.tasks.iter().map(|task| task.id).collect::<Vec<_>>(),
+            [1, 2, 3, 4, 5, 6]
+        );
+    }
+
+    #[test]
+    fn remove_tag_deletes_matching_tasks_and_recalculates_ids() {
+        let mut manager = TaskManager::builder()
+            .tasks(vec![
+                Task::builder()
+                    .description("First work task".into())
+                    .tag("work".into())
+                    .build(),
+                Task::builder()
+                    .description("Home task".into())
+                    .tag("home".into())
+                    .build(),
+                Task::builder()
+                    .description("Second work task".into())
+                    .tag("work".into())
+                    .build(),
+            ])
+            .build();
+
+        manager.remove_tag(vec!["work".into()]);
+
+        assert_eq!(manager.tasks[0].description, "Home task");
+        assert_eq!(manager.tasks[0].id, 1);
+    }
+
+    #[test]
+    fn rename_tag_changes_only_matching_tasks() {
+        let mut manager = TaskManager::builder()
+            .tasks(vec![
+                Task::builder().tag("work".into()).build(),
+                Task::builder().tag("home".into()).build(),
+            ])
+            .build();
+
+        manager.rename_tag("work".into(), "job".into());
+
+        assert_eq!(manager.tasks[0].tag, Some("job".into()));
+        assert_eq!(manager.tasks[1].tag, Some("home".into()));
+    }
+
+    #[test]
+    fn load_tasks_assigns_sequential_ids() {
+        let csv = "description,completed,tag\nFirst,false,work\nSecond,true,\n";
+        let reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
+
+        let tasks = TaskManager::load_tasks(reader).unwrap();
+
+        assert_eq!(tasks.iter().map(|task| task.id).collect::<Vec<_>>(), [1, 2]);
+        assert_eq!(
+            tasks
+                .iter()
+                .map(|task| task.description.as_str())
+                .collect::<Vec<_>>(),
+            ["First", "Second"]
+        );
+        assert!(!tasks[0].completed);
+        assert!(tasks[1].completed);
+    }
+
+    #[test]
+    fn load_tasks_rejects_invalid_csv() {
+        let csv = "description,completed,tag\nFirst,maybe,work\n";
+        let reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
+
+        let result = TaskManager::load_tasks(reader);
+
+        assert!(matches!(result, Err(TaskManagerError::TaskParsingError(_))));
+    }
 }
