@@ -1,4 +1,4 @@
-max_width=110
+max_width=100
 group_imports = "One"
 imports_granularity = "Crate"
 imports_layout = "Mixed"

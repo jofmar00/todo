@@ -38,3 +38,8 @@ The location of your todos and your configuration will depend on these environme
 
 1. **TODO_PATH**: determines where your `.todo` file will live
 2. **HOME**: a fallback if `TODO_PATH` is not set. 
+
+The active tag is stored separately for each shell session on Unix, so different
+terminals can use different tags while sharing the same task list. Set
+**TODO_SESSION_FILE** to override the session-state file path, for example when
+running multiple sessions from the same shell.
