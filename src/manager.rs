@@ -8,9 +8,7 @@ use crate::{
 use colored::Colorize;
 use csv::Reader;
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    env, fs, io, os,
-    path::{Path, PathBuf},
+    collections::{BTreeMap, BTreeSet}, default, env, fs, io, os, path::{Path, PathBuf},
 };
 use thiserror::Error;
 
@@ -76,7 +74,7 @@ impl TaskManager {
 
     fn todo_tag() -> Result<Option<Tag>, TaskManagerError> {
         let tag = Self::read_session_tag(&Self::resolve_session_tag_path())?;
-        Ok(tag.filter(|tag| *tag != Tag(TAG_DEFAULT_NAME.into())))
+        Ok(tag.filter(|tag| *tag != Tag::default()))
     }
 
     fn read_session_tag(path: &Path) -> Result<Option<Tag>, TaskManagerError> {
@@ -256,7 +254,7 @@ impl TaskManager {
     }
 
     pub fn list_tags(&self) {
-        println!("#{TAG_DEFAULT_NAME}");
+        println!("{}", Tag::default());
         self.tasks
             .iter()
             .filter_map(|t| t.tag.as_ref())
@@ -273,11 +271,11 @@ impl TaskManager {
     }
 
     pub fn use_tag(&mut self, tag: Option<Tag>) -> TaskManagerResult {
-        let selected_tag = tag.filter(|t| *t != Tag(TAG_DEFAULT_NAME.into()));
+        let selected_tag = tag.filter(|t| *t != Tag::default());
         Self::write_session_tag(&Self::resolve_session_tag_path(), selected_tag.as_ref())?;
         self.selected_tag = selected_tag;
         if self.selected_tag.is_none() {
-            println!("Using tag {TAG_DEFAULT_NAME}")
+            println!("Using tag {}", Tag::default())
         };
         Ok(())
     }
@@ -345,7 +343,7 @@ impl TaskManager {
             // ANSI cuentan como caracteres para el padding de `{:<width$}`.
             let (label, plain_len) = match tag {
                 Some(tag) => (tag.to_string(), tag.0.len() + 1),
-                None => (format!("#{TAG_DEFAULT_NAME}"), TAG_DEFAULT_NAME.len() + 1),
+                None => (format!("{}", Tag::default()), TAG_DEFAULT_NAME.len() + 1),
             };
             let padding = " ".repeat(label_width.saturating_sub(plain_len));
             println!("{label}{padding} {bar} {percent:>3}% ({done}/{total})");
