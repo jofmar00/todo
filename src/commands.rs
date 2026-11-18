@@ -4,6 +4,8 @@ use crate::{
     task::TaskID,
 };
 use clap::{Parser, Subcommand};
+use std::{fmt::Debug, num::ParseIntError, str::FromStr};
+use thiserror::Error;
 
 /// A simple command-line to-do list manager. Made by @jofmar00 in Rust.
 #[derive(Parser)]
@@ -34,19 +36,19 @@ pub enum Command {
     Done {
         /// Task ID
         #[arg(required = true, num_args = 1..)]
-        ids: Vec<TaskID>,
+        ids: Vec<TaskIdParam>,
     },
     /// Unmark a task as done
     Undone {
         /// Task ID
         #[arg(required = true, num_args = 1..)]
-        ids: Vec<TaskID>,
+        ids: Vec<TaskIdParam>,
     },
     /// Remove a task
     Rm {
         /// Task ID
         #[arg(required = true, num_args = 1..)]
-        ids: Vec<TaskID>,
+        ids: Vec<TaskIdParam>,
     },
     /// Order completed tasks to be first in the list
     Order,
@@ -84,9 +86,9 @@ impl Command {
         match self {
             Command::Add { description, tag } => tasks.add(description, tag),
             Command::Ls { tags } => ls_tags = tags,
-            Command::Done { ids } => tasks.mark_done(ids)?,
-            Command::Undone { ids } => tasks.mark_undone(ids)?,
-            Command::Rm { ids } => tasks.remove(ids)?,
+            Command::Done { ids } => tasks.mark_done(TaskIdParam::to_id_vec(ids))?,
+            Command::Undone { ids } => tasks.mark_undone(TaskIdParam::to_id_vec(ids))?,
+            Command::Rm { ids } => tasks.remove(TaskIdParam::to_id_vec(ids))?,
             Command::Order => tasks.order_completed(),
             Command::Tag { id, tag } => tasks.tag(id, tag)?,
             Command::Lstags => {
@@ -105,5 +107,64 @@ impl Command {
             tasks.list(ls_tags)?;
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum TaskIdParam {
+    One(TaskID),
+    Range { start: TaskID, end: TaskID },
+}
+
+#[derive(Error, Debug)]
+pub enum TaskIdParamError {
+    #[error("invalid value {value}: {source}")]
+    InvalidValue {
+        value: String,
+        source: ParseIntError,
+    },
+
+    #[error("invalid range: {0}")]
+    InvalidRange(String),
+}
+
+impl FromStr for TaskIdParam {
+    type Err = TaskIdParamError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parse_one = |v: &str| {
+            v.parse::<TaskID>()
+                .map_err(|e| TaskIdParamError::InvalidValue {
+                    value: v.to_string(),
+                    source: e,
+                })
+        };
+
+        match s.split_once('-') {
+            Some((start, end)) => {
+                let start = parse_one(start)?;
+                let end = parse_one(end)?;
+                if end < start {
+                    return Err(TaskIdParamError::InvalidRange(s.to_string()));
+                }
+                Ok(Self::Range { start, end })
+            }
+            None => Ok(Self::One(parse_one(s)?)),
+        }
+    }
+}
+
+impl TaskIdParam {
+    fn to_id_vec(params: Vec<TaskIdParam>) -> Vec<TaskID> {
+        let mut ids = Vec::new();
+
+        for param in params {
+            match param {
+                Self::One(id) => ids.push(id),
+                Self::Range { start, end } => ids.extend(start..=end),
+            }
+        }
+
+        ids
     }
 }
