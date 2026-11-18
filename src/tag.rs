@@ -14,7 +14,7 @@ pub struct Tag(pub String);
 impl Tag {
     pub fn color(&self) -> CustomColor {
         if self.0 == TAG_DEFAULT_NAME {
-            return CustomColor::new(255, 255, 255)
+            return CustomColor::new(255, 255, 255);
         }
 
         let mut hasher = DefaultHasher::new();
